@@ -177,6 +177,7 @@ func BenchmarkAddRemove(b *testing.B) {
 	cfg := newConfig()
 	c := New(nil, cfg)
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		member := testMember("node" + strconv.Itoa(i))
 		c.Add(member)
@@ -190,10 +191,15 @@ func BenchmarkLocateKey(b *testing.B) {
 	c.Add(testMember("node1"))
 	c.Add(testMember("node2"))
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		key := []byte("key" + strconv.Itoa(i))
-		c.LocateKey(key)
-	}
+
+	b.RunParallel(func(pb *testing.PB) {
+		var i int
+		for pb.Next() {
+			key := []byte("key" + strconv.Itoa(i))
+			c.LocateKey(key)
+			i++
+		}
+	})
 }
 
 func BenchmarkGetClosestN(b *testing.B) {
@@ -203,8 +209,13 @@ func BenchmarkGetClosestN(b *testing.B) {
 		c.Add(testMember(fmt.Sprintf("node%d", i)))
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		key := []byte("key" + strconv.Itoa(i))
-		c.GetClosestN(key, 3)
-	}
+
+	b.RunParallel(func(pb *testing.PB) {
+		var i int
+		for pb.Next() {
+			key := []byte("key" + strconv.Itoa(i))
+			c.GetClosestN(key, 3)
+			i++
+		}
+	})
 }
