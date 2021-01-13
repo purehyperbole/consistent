@@ -178,11 +178,15 @@ func BenchmarkAddRemove(b *testing.B) {
 	c := New(nil, cfg)
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
-		member := testMember("node" + strconv.Itoa(i))
-		c.Add(member)
-		c.Remove(member.String())
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		var i int
+		for pb.Next() {
+			member := testMember("node" + strconv.Itoa(i))
+			c.Add(member)
+			c.Remove(member.String())
+			i++
+		}
+	})
 }
 
 func BenchmarkLocateKey(b *testing.B) {

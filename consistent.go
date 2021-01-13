@@ -155,47 +155,58 @@ func (c *Consistent) AverageLoad() float64 {
 
 // Add adds a new member to the consistent hash circle.
 func (c *Consistent) Add(member Member) {
-	s := c.getState()
-	ns := s.copy()
+	for {
+		s := c.getState()
 
-	if _, ok := s.members[member.String()]; ok {
-		// We already have this member. Quit immediately.
-		return
-	}
-	ns.add(member)
-	ns.distributePartitions()
+		if _, ok := s.members[member.String()]; ok {
+			// We already have this member. Quit immediately.
+			return
+		}
 
-	for !atomic.CompareAndSwapPointer(c.state, unsafe.Pointer(s), unsafe.Pointer(ns)) {
+		ns := s.copy()
+
+		ns.add(member)
+		ns.distributePartitions()
+
+		if atomic.CompareAndSwapPointer(c.state, unsafe.Pointer(s), unsafe.Pointer(ns)) {
+			return
+		}
 	}
 }
 
 // Remove removes a member from the consistent hash circle.
 func (c *Consistent) Remove(name string) {
-	s := c.getState()
-	ns := s.copy()
+	for {
+		s := c.getState()
 
-	if _, ok := ns.members[name]; !ok {
-		// There is no member with that name. Quit immediately.
-		return
-	}
-
-	for i := 0; i < ns.config.ReplicationFactor; i++ {
-		key := []byte(fmt.Sprintf("%s%d", name, i))
-		h := ns.hasher.Sum64(key)
-		delete(ns.ring, h)
-		ns.delSlice(h)
-	}
-	delete(ns.members, name)
-	if len(ns.members) == 0 {
-		// consistent hash ring is empty now. Reset the partition table.
-		ns.partitions = make(map[int]*Member)
-		for !atomic.CompareAndSwapPointer(c.state, unsafe.Pointer(s), unsafe.Pointer(ns)) {
+		if _, ok := s.members[name]; !ok {
+			// There is no member with that name. Quit immediately.
+			return
 		}
-		return
-	}
-	ns.distributePartitions()
 
-	for !atomic.CompareAndSwapPointer(c.state, unsafe.Pointer(s), unsafe.Pointer(ns)) {
+		ns := s.copy()
+
+		for i := 0; i < ns.config.ReplicationFactor; i++ {
+			key := []byte(fmt.Sprintf("%s%d", name, i))
+			h := ns.hasher.Sum64(key)
+			delete(ns.ring, h)
+			ns.delSlice(h)
+		}
+		delete(ns.members, name)
+		if len(ns.members) == 0 {
+			// consistent hash ring is empty now. Reset the partition table.
+			ns.partitions = make(map[int]*Member)
+			if atomic.CompareAndSwapPointer(c.state, unsafe.Pointer(s), unsafe.Pointer(ns)) {
+				return
+			} else {
+				continue
+			}
+		}
+		ns.distributePartitions()
+
+		if atomic.CompareAndSwapPointer(c.state, unsafe.Pointer(s), unsafe.Pointer(ns)) {
+			return
+		}
 	}
 }
 
