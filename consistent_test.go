@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"strconv"
+	"sync/atomic"
 	"testing"
 )
 
@@ -178,10 +179,12 @@ func BenchmarkAddRemove(b *testing.B) {
 	c := New(nil, cfg)
 	b.ResetTimer()
 
+	var p int64
+
 	b.RunParallel(func(pb *testing.PB) {
 		var i int
 		for pb.Next() {
-			member := testMember("node" + strconv.Itoa(i))
+			member := testMember(fmt.Sprintf("node-%d-%d", atomic.AddInt64(&p, 1), i))
 			c.Add(member)
 			c.Remove(member.String())
 			i++
