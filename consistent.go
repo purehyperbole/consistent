@@ -58,7 +58,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"sync"
 	"sync/atomic"
 	"unsafe"
 )
@@ -104,8 +103,6 @@ type Config struct {
 
 // Consistent holds the information about the members of the consistent hash circle.
 type Consistent struct {
-	mu sync.RWMutex
-
 	state *unsafe.Pointer
 }
 
