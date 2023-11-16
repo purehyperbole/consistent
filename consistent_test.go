@@ -56,12 +56,12 @@ func (hs hasher) Sum64(data []byte) uint64 {
 
 func TestConsistentAdd(t *testing.T) {
 	cfg := newConfig()
-	c := New(nil, cfg)
+	c := New[testMember](nil, cfg)
 	members := make(map[string]struct{})
 	for i := 0; i < 8; i++ {
 		member := testMember(fmt.Sprintf("node%d.olric", i))
 		members[member.String()] = struct{}{}
-		c.Add(member)
+		c.Add(&member)
 	}
 	for member := range members {
 		found := false
@@ -77,13 +77,13 @@ func TestConsistentAdd(t *testing.T) {
 }
 
 func TestConsistentRemove(t *testing.T) {
-	members := []Member{}
+	members := []*testMember{}
 	for i := 0; i < 8; i++ {
 		member := testMember(fmt.Sprintf("node%d.olric", i))
-		members = append(members, member)
+		members = append(members, &member)
 	}
 	cfg := newConfig()
-	c := New(members, cfg)
+	c := New[testMember](members, cfg)
 	if len(c.GetMembers()) != len(members) {
 		t.Fatalf("inserted member count is different")
 	}
@@ -96,13 +96,13 @@ func TestConsistentRemove(t *testing.T) {
 }
 
 func TestConsistentLoad(t *testing.T) {
-	members := []Member{}
+	members := []*testMember{}
 	for i := 0; i < 8; i++ {
 		member := testMember(fmt.Sprintf("node%d.olric", i))
-		members = append(members, member)
+		members = append(members, &member)
 	}
 	cfg := newConfig()
-	c := New(members, cfg)
+	c := New[testMember](members, cfg)
 	if len(c.GetMembers()) != len(members) {
 		t.Fatalf("inserted member count is different")
 	}
@@ -116,7 +116,7 @@ func TestConsistentLoad(t *testing.T) {
 
 func TestConsistentLocateKey(t *testing.T) {
 	cfg := newConfig()
-	c := New(nil, cfg)
+	c := New[testMember](nil, cfg)
 	key := []byte("Olric")
 	res := c.LocateKey(key)
 	if res != nil {
@@ -126,7 +126,7 @@ func TestConsistentLocateKey(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		member := testMember(fmt.Sprintf("node%d.olric", i))
 		members[member.String()] = struct{}{}
-		c.Add(member)
+		c.Add(&member)
 	}
 	res = c.LocateKey(key)
 	if res == nil {
@@ -135,13 +135,13 @@ func TestConsistentLocateKey(t *testing.T) {
 }
 
 func TestConsistentInsufficientMemberCount(t *testing.T) {
-	members := []Member{}
+	members := []*testMember{}
 	for i := 0; i < 8; i++ {
 		member := testMember(fmt.Sprintf("node%d.olric", i))
-		members = append(members, member)
+		members = append(members, &member)
 	}
 	cfg := newConfig()
-	c := New(members, cfg)
+	c := New[testMember](members, cfg)
 	key := []byte("Olric")
 	_, err := c.GetClosestN(key, 30)
 	if err != ErrInsufficientMemberCount {
@@ -150,13 +150,13 @@ func TestConsistentInsufficientMemberCount(t *testing.T) {
 }
 
 func TestConsistentClosestMembers(t *testing.T) {
-	members := []Member{}
+	members := []*testMember{}
 	for i := 0; i < 8; i++ {
 		member := testMember(fmt.Sprintf("node%d.olric", i))
-		members = append(members, member)
+		members = append(members, &member)
 	}
 	cfg := newConfig()
-	c := New(members, cfg)
+	c := New[testMember](members, cfg)
 	key := []byte("Olric")
 	closestn, err := c.GetClosestN(key, 2)
 	if err != nil {
@@ -176,7 +176,7 @@ func TestConsistentClosestMembers(t *testing.T) {
 
 func BenchmarkAddRemove(b *testing.B) {
 	cfg := newConfig()
-	c := New(nil, cfg)
+	c := New[testMember](nil, cfg)
 	b.ResetTimer()
 
 	var p int64
@@ -185,7 +185,7 @@ func BenchmarkAddRemove(b *testing.B) {
 		var i int
 		for pb.Next() {
 			member := testMember(fmt.Sprintf("node-%d-%d", atomic.AddInt64(&p, 1), i))
-			c.Add(member)
+			c.Add(&member)
 			c.Remove(member.String())
 			i++
 		}
@@ -194,9 +194,12 @@ func BenchmarkAddRemove(b *testing.B) {
 
 func BenchmarkLocateKey(b *testing.B) {
 	cfg := newConfig()
-	c := New(nil, cfg)
-	c.Add(testMember("node1"))
-	c.Add(testMember("node2"))
+	c := New[testMember](nil, cfg)
+	m1 := testMember("node1")
+	m2 := testMember("node2")
+
+	c.Add(&m1)
+	c.Add(&m2)
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
@@ -211,9 +214,10 @@ func BenchmarkLocateKey(b *testing.B) {
 
 func BenchmarkGetClosestN(b *testing.B) {
 	cfg := newConfig()
-	c := New(nil, cfg)
+	c := New[testMember](nil, cfg)
 	for i := 0; i < 10; i++ {
-		c.Add(testMember(fmt.Sprintf("node%d", i)))
+		m := testMember(fmt.Sprintf("node%d", i))
+		c.Add(&m)
 	}
 	b.ResetTimer()
 

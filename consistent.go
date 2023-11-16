@@ -26,30 +26,30 @@
 // https://research.googleblog.com/2017/04/consistent-hashing-with-bounded-loads.html
 //
 // Example Use:
-// 	cfg := consistent.Config{
-// 		PartitionCount:    71,
-// 		ReplicationFactor: 20,
-// 		Load:              1.25,
-// 		Hasher:            hasher{},
-//	}
 //
-//      // Create a new consistent object
-//      // You may call this with a list of members
-//      // instead of adding them one by one.
-//	c := consistent.New(members, cfg)
+//		cfg := consistent.Config{
+//			PartitionCount:    71,
+//			ReplicationFactor: 20,
+//			Load:              1.25,
+//			Hasher:            hasher{},
+//		}
 //
-//      // myMember struct just needs to implement a String method.
-//      // New/Add/Remove distributes partitions among members using the algorithm
-//      // defined on Google Research Blog.
-//	c.Add(myMember)
+//	     // Create a new consistent object
+//	     // You may call this with a list of members
+//	     // instead of adding them one by one.
+//		c := consistent.New(members, cfg)
 //
-//	key := []byte("my-key")
-//      // LocateKey hashes the key and calculates partition ID with
-//      // this modulo operation: MOD(hash result, partition count)
-//      // The owner of the partition is already calculated by New/Add/Remove.
-//      // LocateKey just returns the member which's responsible for the key.
-//	member := c.LocateKey(key)
+//	     // myMember struct just needs to implement a String method.
+//	     // New/Add/Remove distributes partitions among members using the algorithm
+//	     // defined on Google Research Blog.
+//		c.Add(myMember)
 //
+//		key := []byte("my-key")
+//	     // LocateKey hashes the key and calculates partition ID with
+//	     // this modulo operation: MOD(hash result, partition count)
+//	     // The owner of the partition is already calculated by New/Add/Remove.
+//	     // LocateKey just returns the member which's responsible for the key.
+//		member := c.LocateKey(key)
 package consistent
 
 import (
@@ -102,25 +102,25 @@ type Config struct {
 }
 
 // Consistent holds the information about the members of the consistent hash circle.
-type Consistent struct {
+type Consistent[T Member] struct {
 	state *unsafe.Pointer
 }
 
 // New creates and returns a new Consistent object.
-func New(members []Member, config Config) *Consistent {
+func New[T Member](members []*T, config Config) *Consistent[T] {
 	if config.Hasher == nil {
 		panic("Hasher cannot be nil")
 	}
 
-	s := unsafe.Pointer(&state{
+	s := unsafe.Pointer(&state[T]{
 		config:         config,
 		hasher:         config.Hasher,
-		members:        make(map[string]*Member),
+		members:        make(map[string]*T),
 		partitionCount: uint64(config.PartitionCount),
-		ring:           make(map[uint64]*Member),
+		ring:           make(map[uint64]*T),
 	})
 
-	c := &Consistent{
+	c := &Consistent[T]{
 		state: &s,
 	}
 
@@ -134,11 +134,11 @@ func New(members []Member, config Config) *Consistent {
 }
 
 // GetMembers returns a thread-safe copy of members.
-func (c *Consistent) GetMembers() []Member {
+func (c *Consistent[T]) GetMembers() []T {
 	s := c.getState()
 
 	// Create a thread-safe copy of member list.
-	members := make([]Member, 0, len(s.members))
+	members := make([]T, 0, len(s.members))
 	for _, member := range s.members {
 		members = append(members, *member)
 	}
@@ -146,16 +146,16 @@ func (c *Consistent) GetMembers() []Member {
 }
 
 // AverageLoad exposes the current average load.
-func (c *Consistent) AverageLoad() float64 {
+func (c *Consistent[T]) AverageLoad() float64 {
 	return c.getState().averageLoad()
 }
 
 // Add adds a new member to the consistent hash circle.
-func (c *Consistent) Add(member Member) {
+func (c *Consistent[T]) Add(member *T) {
 	for {
 		s := c.getState()
 
-		if _, ok := s.members[member.String()]; ok {
+		if _, ok := s.members[(*member).String()]; ok {
 			// We already have this member. Quit immediately.
 			return
 		}
@@ -172,7 +172,7 @@ func (c *Consistent) Add(member Member) {
 }
 
 // Remove removes a member from the consistent hash circle.
-func (c *Consistent) Remove(name string) {
+func (c *Consistent[T]) Remove(name string) {
 	for {
 		s := c.getState()
 
@@ -192,7 +192,7 @@ func (c *Consistent) Remove(name string) {
 		delete(ns.members, name)
 		if len(ns.members) == 0 {
 			// consistent hash ring is empty now. Reset the partition table.
-			ns.partitions = make(map[int]*Member)
+			ns.partitions = make(map[int]*T)
 			if atomic.CompareAndSwapPointer(c.state, unsafe.Pointer(s), unsafe.Pointer(ns)) {
 				return
 			} else {
@@ -208,19 +208,19 @@ func (c *Consistent) Remove(name string) {
 }
 
 // LoadDistribution exposes load distribution of members.
-func (c *Consistent) LoadDistribution() map[string]float64 {
+func (c *Consistent[T]) LoadDistribution() map[string]float64 {
 	return c.getState().loads
 }
 
 // FindPartitionID returns partition id for given key.
-func (c *Consistent) FindPartitionID(key []byte) int {
+func (c *Consistent[T]) FindPartitionID(key []byte) int {
 	s := c.getState()
 	hkey := s.hasher.Sum64(key)
 	return int(hkey % s.partitionCount)
 }
 
 // GetPartitionOwner returns the owner of the given partition.
-func (c *Consistent) GetPartitionOwner(partID int) Member {
+func (c *Consistent[T]) GetPartitionOwner(partID int) *T {
 	s := c.getState()
 
 	member, ok := s.partitions[partID]
@@ -228,49 +228,49 @@ func (c *Consistent) GetPartitionOwner(partID int) Member {
 		return nil
 	}
 	// Create a thread-safe copy of member and return it.
-	return *member
+	return member
 }
 
 // LocateKey finds a home for given key
-func (c *Consistent) LocateKey(key []byte) Member {
+func (c *Consistent[T]) LocateKey(key []byte) *T {
 	partID := c.FindPartitionID(key)
 	return c.GetPartitionOwner(partID)
 }
 
 // GetClosestN returns the closest N member to a key in the hash ring.
 // This may be useful to find members for replication.
-func (c *Consistent) GetClosestN(key []byte, count int) ([]Member, error) {
+func (c *Consistent[T]) GetClosestN(key []byte, count int) ([]Member, error) {
 	partID := c.FindPartitionID(key)
 	return c.getState().getClosestN(partID, count)
 }
 
 // GetClosestNForPartition returns the closest N member for given partition.
 // This may be useful to find members for replication.
-func (c *Consistent) GetClosestNForPartition(partID, count int) ([]Member, error) {
+func (c *Consistent[T]) GetClosestNForPartition(partID, count int) ([]Member, error) {
 	return c.getState().getClosestN(partID, count)
 }
 
-func (c *Consistent) getState() *state {
-	return (*state)(atomic.LoadPointer(c.state))
+func (c *Consistent[T]) getState() *state[T] {
+	return (*state[T])(atomic.LoadPointer(c.state))
 }
 
-type state struct {
+type state[T Member] struct {
 	config         Config
 	hasher         Hasher
 	sortedSet      []uint64
 	partitionCount uint64
 	loads          map[string]float64
-	members        map[string]*Member
-	partitions     map[int]*Member
-	ring           map[uint64]*Member
+	members        map[string]*T
+	partitions     map[int]*T
+	ring           map[uint64]*T
 }
 
-func (s *state) averageLoad() float64 {
+func (s *state[T]) averageLoad() float64 {
 	avgLoad := float64(s.partitionCount/uint64(len(s.members))) * s.config.Load
 	return math.Ceil(avgLoad)
 }
 
-func (s *state) distributeWithLoad(partID, idx int, partitions map[int]*Member, loads map[string]float64) {
+func (s *state[T]) distributeWithLoad(partID, idx int, partitions map[int]*T, loads map[string]float64) {
 	avgLoad := s.averageLoad()
 	var count int
 	for {
@@ -294,9 +294,9 @@ func (s *state) distributeWithLoad(partID, idx int, partitions map[int]*Member, 
 	}
 }
 
-func (s *state) distributePartitions() {
+func (s *state[T]) distributePartitions() {
 	loads := make(map[string]float64)
-	partitions := make(map[int]*Member)
+	partitions := make(map[int]*T)
 
 	bs := make([]byte, 8)
 	for partID := uint64(0); partID < s.partitionCount; partID++ {
@@ -314,11 +314,11 @@ func (s *state) distributePartitions() {
 	s.loads = loads
 }
 
-func (s *state) add(member Member) {
+func (s *state[T]) add(member *T) {
 	for i := 0; i < s.config.ReplicationFactor; i++ {
-		key := []byte(fmt.Sprintf("%s%d", member.String(), i))
+		key := []byte(fmt.Sprintf("%s%d", (*member).String(), i))
 		h := s.hasher.Sum64(key)
-		s.ring[h] = &member
+		s.ring[h] = member
 		s.sortedSet = append(s.sortedSet, h)
 	}
 	// sort hashes ascendingly
@@ -326,10 +326,10 @@ func (s *state) add(member Member) {
 		return s.sortedSet[i] < s.sortedSet[j]
 	})
 	// Storing member at this map is useful to find backup members of a partition.
-	s.members[member.String()] = &member
+	s.members[(*member).String()] = member
 }
 
-func (s *state) delSlice(val uint64) {
+func (s *state[T]) delSlice(val uint64) {
 	for i := 0; i < len(s.sortedSet); i++ {
 		if s.sortedSet[i] == val {
 			s.sortedSet = append(s.sortedSet[:i], s.sortedSet[i+1:]...)
@@ -338,7 +338,7 @@ func (s *state) delSlice(val uint64) {
 	}
 }
 
-func (s *state) getClosestN(partID, count int) ([]Member, error) {
+func (s *state[T]) getClosestN(partID, count int) ([]Member, error) {
 	res := []Member{}
 	if count > len(s.members) {
 		return res, ErrInsufficientMemberCount
@@ -351,7 +351,7 @@ func (s *state) getClosestN(partID, count int) ([]Member, error) {
 	}
 	// Hash and sort all the names.
 	keys := []uint64{}
-	kmems := make(map[uint64]*Member)
+	kmems := make(map[uint64]*T)
 	for name, member := range s.members {
 		key := s.hasher.Sum64([]byte(name))
 		if name == (*owner).String() {
@@ -387,16 +387,16 @@ func (s *state) getClosestN(partID, count int) ([]Member, error) {
 	return res, nil
 }
 
-func (s *state) copy() *state {
-	ns := state{
+func (s *state[T]) copy() *state[T] {
+	ns := state[T]{
 		config:         s.config,
 		hasher:         s.hasher,
 		sortedSet:      make([]uint64, len(s.sortedSet)),
 		partitionCount: s.partitionCount,
 		loads:          make(map[string]float64),
-		members:        make(map[string]*Member),
-		partitions:     make(map[int]*Member),
-		ring:           make(map[uint64]*Member),
+		members:        make(map[string]*T),
+		partitions:     make(map[int]*T),
+		ring:           make(map[uint64]*T),
 	}
 
 	// copy all values from the existing state
