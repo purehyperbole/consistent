@@ -107,7 +107,7 @@ type Consistent[T Member] struct {
 }
 
 // New creates and returns a new Consistent object.
-func New[T Member](members []*T, config Config) *Consistent[T] {
+func New[T Member](members []T, config Config) *Consistent[T] {
 	if config.Hasher == nil {
 		panic("Hasher cannot be nil")
 	}
@@ -115,9 +115,9 @@ func New[T Member](members []*T, config Config) *Consistent[T] {
 	s := unsafe.Pointer(&state[T]{
 		config:         config,
 		hasher:         config.Hasher,
-		members:        make(map[string]*T),
+		members:        make(map[string]T),
 		partitionCount: uint64(config.PartitionCount),
-		ring:           make(map[uint64]*T),
+		ring:           make(map[uint64]T),
 	})
 
 	c := &Consistent[T]{
@@ -140,7 +140,7 @@ func (c *Consistent[T]) GetMembers() []T {
 	// Create a thread-safe copy of member list.
 	members := make([]T, 0, len(s.members))
 	for _, member := range s.members {
-		members = append(members, *member)
+		members = append(members, member)
 	}
 	return members
 }
@@ -151,11 +151,11 @@ func (c *Consistent[T]) AverageLoad() float64 {
 }
 
 // Add adds a new member to the consistent hash circle.
-func (c *Consistent[T]) Add(member *T) {
+func (c *Consistent[T]) Add(member T) {
 	for {
 		s := c.getState()
 
-		if _, ok := s.members[(*member).String()]; ok {
+		if _, ok := s.members[(member).String()]; ok {
 			// We already have this member. Quit immediately.
 			return
 		}
@@ -192,7 +192,7 @@ func (c *Consistent[T]) Remove(name string) {
 		delete(ns.members, name)
 		if len(ns.members) == 0 {
 			// consistent hash ring is empty now. Reset the partition table.
-			ns.partitions = make(map[int]*T)
+			ns.partitions = make(map[int]T)
 			if atomic.CompareAndSwapPointer(c.state, unsafe.Pointer(s), unsafe.Pointer(ns)) {
 				return
 			} else {
@@ -227,8 +227,8 @@ func (c *Consistent[T]) GetPartitionOwner(partID int) *T {
 	if !ok {
 		return nil
 	}
-	// Create a thread-safe copy of member and return it.
-	return member
+
+	return &member
 }
 
 // LocateKey finds a home for given key
@@ -260,9 +260,9 @@ type state[T Member] struct {
 	sortedSet      []uint64
 	partitionCount uint64
 	loads          map[string]float64
-	members        map[string]*T
-	partitions     map[int]*T
-	ring           map[uint64]*T
+	members        map[string]T
+	partitions     map[int]T
+	ring           map[uint64]T
 }
 
 func (s *state[T]) averageLoad() float64 {
@@ -270,7 +270,7 @@ func (s *state[T]) averageLoad() float64 {
 	return math.Ceil(avgLoad)
 }
 
-func (s *state[T]) distributeWithLoad(partID, idx int, partitions map[int]*T, loads map[string]float64) {
+func (s *state[T]) distributeWithLoad(partID, idx int, partitions map[int]T, loads map[string]float64) {
 	avgLoad := s.averageLoad()
 	var count int
 	for {
@@ -280,10 +280,10 @@ func (s *state[T]) distributeWithLoad(partID, idx int, partitions map[int]*T, lo
 			panic("not enough room to distribute partitions")
 		}
 		i := s.sortedSet[idx]
-		member := *s.ring[i]
+		member := s.ring[i]
 		load := loads[member.String()]
 		if load+1 <= avgLoad {
-			partitions[partID] = &member
+			partitions[partID] = member
 			loads[member.String()]++
 			return
 		}
@@ -296,7 +296,7 @@ func (s *state[T]) distributeWithLoad(partID, idx int, partitions map[int]*T, lo
 
 func (s *state[T]) distributePartitions() {
 	loads := make(map[string]float64)
-	partitions := make(map[int]*T)
+	partitions := make(map[int]T)
 
 	bs := make([]byte, 8)
 	for partID := uint64(0); partID < s.partitionCount; partID++ {
@@ -314,9 +314,9 @@ func (s *state[T]) distributePartitions() {
 	s.loads = loads
 }
 
-func (s *state[T]) add(member *T) {
+func (s *state[T]) add(member T) {
 	for i := 0; i < s.config.ReplicationFactor; i++ {
-		key := []byte(fmt.Sprintf("%s%d", (*member).String(), i))
+		key := []byte(fmt.Sprintf("%s%d", (member).String(), i))
 		h := s.hasher.Sum64(key)
 		s.ring[h] = member
 		s.sortedSet = append(s.sortedSet, h)
@@ -326,7 +326,7 @@ func (s *state[T]) add(member *T) {
 		return s.sortedSet[i] < s.sortedSet[j]
 	})
 	// Storing member at this map is useful to find backup members of a partition.
-	s.members[(*member).String()] = member
+	s.members[(member).String()] = member
 }
 
 func (s *state[T]) delSlice(val uint64) {
@@ -351,10 +351,10 @@ func (s *state[T]) getClosestN(partID, count int) ([]Member, error) {
 	}
 	// Hash and sort all the names.
 	keys := []uint64{}
-	kmems := make(map[uint64]*T)
+	kmems := make(map[uint64]T)
 	for name, member := range s.members {
 		key := s.hasher.Sum64([]byte(name))
-		if name == (*owner).String() {
+		if name == (owner).String() {
 			ownerKey = key
 		}
 		keys = append(keys, key)
@@ -369,7 +369,7 @@ func (s *state[T]) getClosestN(partID, count int) ([]Member, error) {
 	for idx < len(keys) {
 		if keys[idx] == ownerKey {
 			key := keys[idx]
-			res = append(res, *kmems[key])
+			res = append(res, kmems[key])
 			break
 		}
 		idx++
@@ -382,7 +382,7 @@ func (s *state[T]) getClosestN(partID, count int) ([]Member, error) {
 			idx = 0
 		}
 		key := keys[idx]
-		res = append(res, *kmems[key])
+		res = append(res, kmems[key])
 	}
 	return res, nil
 }
@@ -394,9 +394,9 @@ func (s *state[T]) copy() *state[T] {
 		sortedSet:      make([]uint64, len(s.sortedSet)),
 		partitionCount: s.partitionCount,
 		loads:          make(map[string]float64),
-		members:        make(map[string]*T),
-		partitions:     make(map[int]*T),
-		ring:           make(map[uint64]*T),
+		members:        make(map[string]T),
+		partitions:     make(map[int]T),
+		ring:           make(map[uint64]T),
 	}
 
 	// copy all values from the existing state

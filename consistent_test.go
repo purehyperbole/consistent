@@ -56,7 +56,7 @@ func (hs hasher) Sum64(data []byte) uint64 {
 
 func TestConsistentAdd(t *testing.T) {
 	cfg := newConfig()
-	c := New[testMember](nil, cfg)
+	c := New[*testMember](nil, cfg)
 	members := make(map[string]struct{})
 	for i := 0; i < 8; i++ {
 		member := testMember(fmt.Sprintf("node%d.olric", i))
@@ -83,7 +83,7 @@ func TestConsistentRemove(t *testing.T) {
 		members = append(members, &member)
 	}
 	cfg := newConfig()
-	c := New[testMember](members, cfg)
+	c := New[*testMember](members, cfg)
 	if len(c.GetMembers()) != len(members) {
 		t.Fatalf("inserted member count is different")
 	}
@@ -102,7 +102,7 @@ func TestConsistentLoad(t *testing.T) {
 		members = append(members, &member)
 	}
 	cfg := newConfig()
-	c := New[testMember](members, cfg)
+	c := New[*testMember](members, cfg)
 	if len(c.GetMembers()) != len(members) {
 		t.Fatalf("inserted member count is different")
 	}
@@ -116,7 +116,7 @@ func TestConsistentLoad(t *testing.T) {
 
 func TestConsistentLocateKey(t *testing.T) {
 	cfg := newConfig()
-	c := New[testMember](nil, cfg)
+	c := New[*testMember](nil, cfg)
 	key := []byte("Olric")
 	res := c.LocateKey(key)
 	if res != nil {
@@ -141,7 +141,7 @@ func TestConsistentInsufficientMemberCount(t *testing.T) {
 		members = append(members, &member)
 	}
 	cfg := newConfig()
-	c := New[testMember](members, cfg)
+	c := New[*testMember](members, cfg)
 	key := []byte("Olric")
 	_, err := c.GetClosestN(key, 30)
 	if err != ErrInsufficientMemberCount {
@@ -156,7 +156,7 @@ func TestConsistentClosestMembers(t *testing.T) {
 		members = append(members, &member)
 	}
 	cfg := newConfig()
-	c := New[testMember](members, cfg)
+	c := New[*testMember](members, cfg)
 	key := []byte("Olric")
 	closestn, err := c.GetClosestN(key, 2)
 	if err != nil {
@@ -168,15 +168,15 @@ func TestConsistentClosestMembers(t *testing.T) {
 	partID := c.FindPartitionID(key)
 	owner := c.GetPartitionOwner(partID)
 	for i, cl := range closestn {
-		if i != 0 && cl.String() == owner.String() {
-			t.Fatalf("Backup is equal the partition owner: %s", owner.String())
+		if i != 0 && cl.String() == (*owner).String() {
+			t.Fatalf("Backup is equal the partition owner: %s", (*owner).String())
 		}
 	}
 }
 
 func BenchmarkAddRemove(b *testing.B) {
 	cfg := newConfig()
-	c := New[testMember](nil, cfg)
+	c := New[*testMember](nil, cfg)
 	b.ResetTimer()
 
 	var p int64
@@ -194,7 +194,7 @@ func BenchmarkAddRemove(b *testing.B) {
 
 func BenchmarkLocateKey(b *testing.B) {
 	cfg := newConfig()
-	c := New[testMember](nil, cfg)
+	c := New[*testMember](nil, cfg)
 	m1 := testMember("node1")
 	m2 := testMember("node2")
 
@@ -214,7 +214,7 @@ func BenchmarkLocateKey(b *testing.B) {
 
 func BenchmarkGetClosestN(b *testing.B) {
 	cfg := newConfig()
-	c := New[testMember](nil, cfg)
+	c := New[*testMember](nil, cfg)
 	for i := 0; i < 10; i++ {
 		m := testMember(fmt.Sprintf("node%d", i))
 		c.Add(&m)
